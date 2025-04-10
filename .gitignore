@@ -2,3 +2,6 @@ build
 .vscode
 valgrind-out.txt
 test.sh.log
+meta-openembedded/
+meta-raspberrypi/
+poky/
