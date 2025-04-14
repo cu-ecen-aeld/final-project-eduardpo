@@ -1,16 +1,16 @@
 #!/bin/bash
-# Script to build image for qemu.
-# Author: Siddhant Jajoo.
 
 git submodule init
 git submodule sync
 git submodule update
 
 # local.conf won't exist until this step on first execution
-source poky/oe-init-build-env
+source poky/oe-init-build-env build
+echo "Current path is: $(pwd)"
 
-CONFLINE="MACHINE = \"qemuarm64\""
-#CONFLINE="MACHINE = \"raspberrypi4-64\""
+#CONFLINE="MACHINE = \"qemuarm64\""
+CONFLINE="MACHINE = \"raspberrypi4-64\""
+#CONFLINE="MACHINE = \"raspberrypi4\""
 
 cat conf/local.conf | grep "${CONFLINE}" > /dev/null
 local_conf_info=$?
@@ -34,15 +34,12 @@ fi
 # fi
 
 declare -a layer_specs=(
-  "meta-aesd|../meta-aesd"
-  "poky/meta|../poky/meta"
-  "poky/meta-poky|../poky/meta-poky"
-  "poky/meta-yocto-bsp|../poky/meta-yocto-bsp"
   "meta-openembedded/meta-oe|../meta-openembedded/meta-oe"
   "meta-openembedded/meta-python|../meta-openembedded/meta-python"
   "meta-openembedded/meta-multimedia|../meta-openembedded/meta-multimedia"
   "meta-openembedded/meta-networking|../meta-openembedded/meta-networking"
   "meta-raspberrypi|../meta-raspberrypi"
+  "meta-picam|../meta-picam"
 )
 
 for spec in "${layer_specs[@]}"; do
@@ -55,7 +52,33 @@ for spec in "${layer_specs[@]}"; do
   fi
 done
 
+
+#TERGET_IMAGE=core-image-minimal
+#TERGET_IMAGE=core-image-base
+TERGET_IMAGE=core-image-picam
+#TERGET_IMAGE=core-image-aesd
+
+if [ $# -gt 0 ]; then
+  TERGET_IMAGE="$1"
+fi
+
+# add EXTRA_IMAGE_FEATURES here only for NOT CUSTOM images
+if [ "$TERGET_IMAGE" != "core-image-picam" ]; then
+  CONFLINE="EXTRA_IMAGE_FEATURES += \"ssh-server-dropbear\""
+  cat conf/local.conf | grep "${CONFLINE}" > /dev/null
+  local_conf_info=$?
+
+  if [ $local_conf_info -ne 0 ];then
+    echo "Append ${CONFLINE} in the local.conf file"
+    echo ${CONFLINE} >> conf/local.conf
+    
+  else
+    echo "${CONFLINE} already exists in the local.conf file"
+  fi
+fi
+
+echo "Current path is: $(pwd)"
+echo "Building $TERGET_IMAGE..."
+
 set -e
-bitbake core-image-minimal
-#bitbake core-image-base
-#bitbake core-image-aesd
+bitbake $TERGET_IMAGE
