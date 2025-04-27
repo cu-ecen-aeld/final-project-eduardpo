@@ -17,3 +17,5 @@ IMAGE_INSTALL += " \
     wpa-supplicant \
     opencv \
 "
+
+IMAGE_INSTALL:append = " rpicam-apps"
