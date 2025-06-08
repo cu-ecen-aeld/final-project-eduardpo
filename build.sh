@@ -4,8 +4,10 @@ git submodule init
 git submodule sync
 git submodule update
 
+PROJ_DIR="$(pwd)"
+
 # local.conf won't exist until this step on first execution
-source poky/oe-init-build-env build
+source poky/oe-init-build-env ../build_rpi
 echo "Current path is: $(pwd)"
 
 #CONFLINE="MACHINE = \"qemuarm64\""
@@ -18,7 +20,19 @@ local_conf_info=$?
 if [ $local_conf_info -ne 0 ];then
 	echo "Append ${CONFLINE} in the local.conf file"
 	echo ${CONFLINE} >> conf/local.conf
-	
+else
+	echo "${CONFLINE} already exists in the local.conf file"
+fi
+
+
+CONFLINE="DL_DIR = \"$(pwd)/../downloads/\""
+
+cat conf/local.conf | grep "${CONFLINE}" > /dev/null
+local_conf_info=$?
+
+if [ $local_conf_info -ne 0 ];then
+	echo "Append ${CONFLINE} in the local.conf file"
+	echo ${CONFLINE} >> conf/local.conf
 else
 	echo "${CONFLINE} already exists in the local.conf file"
 fi
@@ -34,12 +48,12 @@ fi
 # fi
 
 declare -a layer_specs=(
-  "meta-openembedded/meta-oe|../meta-openembedded/meta-oe"
-  "meta-openembedded/meta-python|../meta-openembedded/meta-python"
-  "meta-openembedded/meta-multimedia|../meta-openembedded/meta-multimedia"
-  "meta-openembedded/meta-networking|../meta-openembedded/meta-networking"
-  "meta-raspberrypi|../meta-raspberrypi"
-  "meta-picam|../meta-picam"
+  "meta-openembedded/meta-oe|$PROJ_DIR/meta-openembedded/meta-oe"
+  "meta-openembedded/meta-python|$PROJ_DIR/meta-openembedded/meta-python"
+  "meta-openembedded/meta-multimedia|$PROJ_DIR/meta-openembedded/meta-multimedia"
+  "meta-openembedded/meta-networking|$PROJ_DIR/meta-openembedded/meta-networking"
+  "meta-raspberrypi|$PROJ_DIR/meta-raspberrypi"
+  "meta-picam|$PROJ_DIR/meta-picam"
 )
 
 for spec in "${layer_specs[@]}"; do
