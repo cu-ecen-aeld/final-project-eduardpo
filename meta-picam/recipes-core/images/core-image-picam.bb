@@ -17,7 +17,8 @@ IMAGE_INSTALL += " \
     wpa-supplicant \
     opencv \
     mosquitto \
-    mosquitto-clients \
+    libgpiod \
+    pir-mqtt \
 "
 
 IMAGE_INSTALL:append = " rpicam-apps"
