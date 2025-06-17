@@ -1,0 +1,11 @@
+[Unit]
+Description=PIR MQTT Motion Alert
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/pir_mqtt -c /etc/pir_mqtt/config.ini
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target

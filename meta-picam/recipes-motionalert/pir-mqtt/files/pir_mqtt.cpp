@@ -1,134 +1,128 @@
+// pir_mqtt.cpp without TLS support
+
 #include <iostream>
+#include <fstream>
 #include <csignal>
 #include <cstring>
 #include <unistd.h>
+#include <getopt.h>
 #include <mosquitto.h>
 #include <gpiod.h>
+#include <chrono>
+#include <ctime>
+#include <iomanip> // for std::put_time
 
-#define GPIO_CHIP     "/dev/gpiochip0"
-#define PIR_LINE_NUM  12
-#define MQTT_HOST     "10.100.102.4"
-#define MQTT_PORT     1883
-#define MQTT_TOPIC    "pir/motion"
-#define CLIENT_ID     "pir_sensor"
-#define MQTT_PAYLOAD_MOTION_DETECTED "MOTION_DETECTED"
-#define MQTT_PAYLOAD_WAITING_FOR_MOTION "waiting_for_motion"
+#define MQTT_PAYLOAD_MOTION_DETECTED "motion_detected"
 
 static volatile bool running = true;
 
-void handle_signal(int sig)
-{
-    std::cout << "\nTerminating on signal " << sig << std::endl;
+std::string mqtt_host = "10.100.102.4";
+int mqtt_port = 1883;
+std::string mqtt_topic = "pir/motion";
+int gpio_line = 12;
+std::string log_file = "/var/log/pir_mqtt.log";
+
+
+void log_event(const std::string& msg) {
+    std::ofstream log(log_file, std::ios_base::app);
+    auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    log << std::put_time(std::localtime(&now), "%c") << ": " << msg << std::endl;
+}
+
+void handle_signal(int sig) {
+    log_event("Exiting on signal " + std::to_string(sig));
     running = false;
 }
 
-void mqtt_reconnect_loop(struct mosquitto *mosq)
-{
-    int rc;
-    std::cout << "Trying to connected to MQTT broker at " << MQTT_HOST << ":" << MQTT_PORT << "\n";
-    while ((rc = mosquitto_connect(mosq, MQTT_HOST, MQTT_PORT, 3600)) != MOSQ_ERR_SUCCESS) {
-        std::cerr << "Failed to connect to MQTT broker at " << MQTT_HOST << ": " << mosquitto_strerror(rc)
-                  << " — retrying in 3s...\n";
+void mqtt_reconnect_loop(struct mosquitto *mosq) {
+    while (mosquitto_connect(mosq, mqtt_host.c_str(), mqtt_port, 60) != MOSQ_ERR_SUCCESS) {
+        log_event("MQTT reconnect to host '" + mqtt_host + "' failed, retrying in 3s...");
         sleep(3);
     }
-    std::cout << "Connected to MQTT broker at " << MQTT_HOST << ":" << MQTT_PORT << "\n";
+    log_event("Connected to MQTT broker at " + mqtt_host + ":" + std::to_string(mqtt_port));
 }
 
-int main()
-{
+void parse_config(const std::string &path) {
+    std::ifstream file(path);
+    std::string line;
+    while (getline(file, line)) {
+        if (line.find("gpio=") == 0) gpio_line = std::stoi(line.substr(5));
+        else if (line.find("host=") == 0) mqtt_host = line.substr(5);
+        else if (line.find("port=") == 0) mqtt_port = std::stoi(line.substr(5));
+        else if (line.find("topic=") == 0) mqtt_topic = line.substr(6);
+        else if (line.find("logfile=") == 0) log_file = line.substr(8);
+    }
+}
+
+int main(int argc, char *argv[]) {
     signal(SIGINT, handle_signal);
 
-    // --- MQTT Setup ---
+    std::string config_path;
+    int opt;
+    while ((opt = getopt(argc, argv, "g:h:p:t:c:l:")) != -1) {
+        switch (opt) {
+            case 'g': gpio_line = std::stoi(optarg); break;
+            case 'h': mqtt_host = optarg; break;
+            case 'p': mqtt_port = std::stoi(optarg); break;
+            case 't': mqtt_topic = optarg; break;
+            case 'c': config_path = optarg; break;
+            case 'l': log_file = optarg; break;
+            default:
+                std::cerr << "Usage: " << argv[0] << " [-c config] [-g gpio] [-h host] [-p port] [-t topic] [-l logfile]\n";
+                return 1;
+        }
+    }
+
+    if (!config_path.empty()) parse_config(config_path);
+
     mosquitto_lib_init();
-    struct mosquitto *mosq = mosquitto_new(CLIENT_ID, true, nullptr);
+    struct mosquitto *mosq = mosquitto_new(nullptr, true, nullptr);
     if (!mosq) {
-        std::cerr << "Failed to create MQTT client.\n";
+        log_event("Failed to create mosquitto client");
         return 1;
     }
+
+    int protocol_version = MQTT_PROTOCOL_V311;
+    mosquitto_opts_set(mosq, MOSQ_OPT_PROTOCOL_VERSION, &protocol_version);
+    mosquitto_reconnect_delay_set(mosq, 2, 10, false);
 
     mqtt_reconnect_loop(mosq);
 
-    // --- GPIO Setup ---
-    struct gpiod_chip *chip = gpiod_chip_open(GPIO_CHIP);
-    if (!chip) {
-        perror("gpiod_chip_open");
-        return 1;
-    }
+    struct gpiod_chip *chip = gpiod_chip_open("/dev/gpiochip0");
+    struct gpiod_line *line = gpiod_chip_get_line(chip, gpio_line);
+    gpiod_line_request_both_edges_events(line, "pir_mqtt");
 
-    struct gpiod_line *line = gpiod_chip_get_line(chip, PIR_LINE_NUM);
-    if (!line) {
-        perror("gpiod_chip_get_line");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-
-    if (gpiod_line_request_both_edges_events(line, "pir_monitor") < 0) {
-        perror("gpiod_line_request_both_edges_events");
-        gpiod_chip_close(chip);
-        return 1;
-    }
-
-    std::cout << "Waiting for PIR motion events on GPIO" << PIR_LINE_NUM << "...\n";
-
-    // --- Event loop ---
     struct gpiod_line_event event;
+    int motion_count = 0;
+    log_event("Monitoring started on GPIO" + std::to_string(gpio_line));
 
-    // Define the timeout duration
-    struct timespec gpio_wait_timeout;
-    gpio_wait_timeout.tv_sec = 5; // 5 seconds
-    gpio_wait_timeout.tv_nsec = 0; // 0 nanoseconds
+    auto last_ping = std::chrono::steady_clock::now();
 
     while (running) {
+        struct timespec timeout = {0, 100000000}; // 100 ms
+        int ret = gpiod_line_event_wait(line, &timeout);
+        if (ret == 1 && gpiod_line_event_read(line, &event) == 0 &&
+            event.event_type == GPIOD_LINE_EVENT_RISING_EDGE) {
 
-        int ret = gpiod_line_event_wait(line, &gpio_wait_timeout);  // Blocking wait with timeout
-        if (ret < 0) {
-            perror("gpiod_line_event_wait");
-            break;
-        } else if (ret == 0) {
-            continue;  // timeout (shouldn't happen with NULL)
+            motion_count++;
+            log_event("Motion detected (#" + std::to_string(motion_count) + ")");
+            int rc = mosquitto_publish(mosq, nullptr, mqtt_topic.c_str(),
+                                       strlen(MQTT_PAYLOAD_MOTION_DETECTED), MQTT_PAYLOAD_MOTION_DETECTED, 0, false);
+            if (rc != MOSQ_ERR_SUCCESS)
+                log_event("MQTT publish failed: " + std::string(mosquitto_strerror(rc)));
         }
 
-        if (gpiod_line_event_read(line, &event) == 0) {
-
-            if (event.event_type == GPIOD_LINE_EVENT_RISING_EDGE) {
-                std::cout << "Motion detected!!! Sending MQTT alert...\n";
-
-                int rc = mosquitto_publish(mosq, nullptr, MQTT_TOPIC,
-                                           strlen(MQTT_PAYLOAD_MOTION_DETECTED), MQTT_PAYLOAD_MOTION_DETECTED,
-                                           0, false);
-                if (rc != MOSQ_ERR_SUCCESS) {
-                    std::cerr << "MQTT publish failed: " << mosquitto_strerror(rc) << "\n";
-                    if (rc == MOSQ_ERR_NO_CONN) {
-                        std::cerr << "Reconnecting...\n";
-                        mqtt_reconnect_loop(mosq); 
-                    }
-                }
-
-            } else if (event.event_type == GPIOD_LINE_EVENT_FALLING_EDGE) {
-
-                std::cout << "Waiting for motion... Sending MQTT alert...\n";
-
-                int rc = mosquitto_publish(mosq, nullptr, MQTT_TOPIC,
-                                           strlen(MQTT_PAYLOAD_WAITING_FOR_MOTION), MQTT_PAYLOAD_WAITING_FOR_MOTION,
-                                           0, false);
-                if (rc != MOSQ_ERR_SUCCESS) {
-                    std::cerr << "MQTT publish failed: " << mosquitto_strerror(rc) << "\n";
-                    if (rc == MOSQ_ERR_NO_CONN) {
-                        std::cerr << "Reconnecting...\n";
-                        mqtt_reconnect_loop(mosq);
-                    }
-                }
-            }
-        }
+        // Maintain MQTT connection
+        mosquitto_loop_misc(mosq);
+        mosquitto_loop_write(mosq, 1);
+        mosquitto_loop_read(mosq, 1);
     }
 
-    // --- Cleanup ---
+    mosquitto_disconnect(mosq);
     gpiod_line_release(line);
     gpiod_chip_close(chip);
-    mosquitto_disconnect(mosq);
     mosquitto_destroy(mosq);
     mosquitto_lib_cleanup();
-
-    std::cout << "Clean shutdown.\n";
+    log_event("Shutdown complete. Total motions detected: " + std::to_string(motion_count));
     return 0;
 }
