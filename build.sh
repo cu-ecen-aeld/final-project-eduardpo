@@ -16,7 +16,6 @@ CONFLINE="MACHINE = \"raspberrypi4-64\""
 
 cat conf/local.conf | grep "${CONFLINE}" > /dev/null
 local_conf_info=$?
-
 if [ $local_conf_info -ne 0 ];then
 	echo "Append ${CONFLINE} in the local.conf file"
 	echo ${CONFLINE} >> conf/local.conf
@@ -29,7 +28,40 @@ CONFLINE="DL_DIR = \"$(pwd)/../downloads/\""
 
 cat conf/local.conf | grep "${CONFLINE}" > /dev/null
 local_conf_info=$?
+if [ $local_conf_info -ne 0 ];then
+	echo "Append ${CONFLINE} in the local.conf file"
+	echo ${CONFLINE} >> conf/local.conf
+else
+	echo "${CONFLINE} already exists in the local.conf file"
+fi
 
+
+CONFLINE="INIT_MANAGER = \"systemd\""
+
+cat conf/local.conf | grep "${CONFLINE}" > /dev/null
+local_conf_info=$?
+if [ $local_conf_info -ne 0 ];then
+	echo "Append ${CONFLINE} in the local.conf file"
+	echo ${CONFLINE} >> conf/local.conf
+else
+	echo "${CONFLINE} already exists in the local.conf file"
+fi
+
+CONFLINE="DISTRO_FEATURES:append = \" systemd\""
+
+cat conf/local.conf | grep "${CONFLINE}" > /dev/null
+local_conf_info=$?
+if [ $local_conf_info -ne 0 ];then
+	echo "Append ${CONFLINE} in the local.conf file"
+	echo ${CONFLINE} >> conf/local.conf
+else
+	echo "${CONFLINE} already exists in the local.conf file"
+fi
+
+CONFLINE="VIRTUAL-RUNTIME_init_manager = \"systemd\""
+
+cat conf/local.conf | grep "${CONFLINE}" > /dev/null
+local_conf_info=$?
 if [ $local_conf_info -ne 0 ];then
 	echo "Append ${CONFLINE} in the local.conf file"
 	echo ${CONFLINE} >> conf/local.conf

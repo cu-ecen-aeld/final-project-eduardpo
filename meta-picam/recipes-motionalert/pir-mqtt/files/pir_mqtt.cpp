@@ -13,6 +13,7 @@
 #include <iomanip> // for std::put_time
 
 #define MQTT_PAYLOAD_MOTION_DETECTED "motion_detected"
+#define MQTT_PAYLOAD_MOTION_WAITING "motion_waiting"
 
 static volatile bool running = true;
 
@@ -108,6 +109,12 @@ int main(int argc, char *argv[]) {
             log_event("Motion detected (#" + std::to_string(motion_count) + ")");
             int rc = mosquitto_publish(mosq, nullptr, mqtt_topic.c_str(),
                                        strlen(MQTT_PAYLOAD_MOTION_DETECTED), MQTT_PAYLOAD_MOTION_DETECTED, 0, false);
+            if (rc != MOSQ_ERR_SUCCESS)
+                log_event("MQTT publish failed: " + std::string(mosquitto_strerror(rc)));
+        } else {
+            log_event("Motion waiting 0");
+            int rc = mosquitto_publish(mosq, nullptr, mqtt_topic.c_str(),
+                                       strlen(MQTT_PAYLOAD_MOTION_WAITING), MQTT_PAYLOAD_MOTION_WAITING, 0, false);
             if (rc != MOSQ_ERR_SUCCESS)
                 log_event("MQTT publish failed: " + std::string(mosquitto_strerror(rc)));
         }

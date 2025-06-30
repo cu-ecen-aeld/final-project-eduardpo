@@ -19,6 +19,8 @@ IMAGE_INSTALL += " \
     mosquitto \
     libgpiod \
     pir-mqtt \
+    rpicam-apps \
+    i2c-tools \
 "
 
-IMAGE_INSTALL:append = " rpicam-apps"
+IMAGE_BOOT_FILES += "bootfiles/*"
