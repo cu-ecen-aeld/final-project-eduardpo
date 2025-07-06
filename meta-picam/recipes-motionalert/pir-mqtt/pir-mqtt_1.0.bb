@@ -1,14 +1,27 @@
-ESCRIPTION = "PIR-MQTT Motion alert"
+ESCRIPTION = "PIR-MQTT Motion alert with GStreamer and OpenCV"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI += "file://pir_mqtt.cpp file://pir-mqtt.service file://config.ini"
+SRC_URI = "git://github.com/eduardpo/motion-stream.git;protocol=https;branch=master \
+           file://pir-mqtt.service \
+           file://config.ini \
+"
 
-DEPENDS = "mosquitto libgpiod"
+# Use AUTOREV to always get the latest commit from the specified branch
+SRCREV = "${AUTOREV}"
+
+S = "${WORKDIR}/git"
+
+DEPENDS = "mosquitto libgpiod gstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly opencv"
 
 
 do_compile() {
-    ${CXX} ${WORKDIR}/pir_mqtt.cpp -o pir_mqtt -lmosquitto -lgpiod -Wl,--hash-style=gnu
+    export PKG_CONFIG_SYSROOT_DIR="${STAGING_DIR_HOST}"
+    export PKG_CONFIG_PATH="${STAGING_DIR_HOST}${libdir}/pkgconfig:${STAGING_DIR_HOST}${datadir}/pkgconfig"
+
+    ${CXX} ${S}/pir_mqtt.cpp -o pir_mqtt \
+        $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0 opencv4) \
+        -lmosquitto -lgpiod -Wl,--hash-style=gnu
 }
 
 do_install() {
@@ -18,7 +31,7 @@ do_install() {
 }
 
 
-inherit systemd
+inherit systemd pkgconfig
 
 # SYSTEMD_SERVICE:${PN} = "pir_mqtt.service"
 # SYSTEMD_AUTO_ENABLE:${PN} = "enable"
@@ -40,4 +53,4 @@ SYSTEMD_SERVICE:${PN} = "pir-mqtt.service"
 # Optional: Specify dependencies for the runtime package.
 # This ensures that libmosquitto and libgpiod runtime libraries are included in the image
 # when this application is added.
-RDEPENDS:${PN} += "mosquitto libgpiod"
+RDEPENDS:${PN} += "mosquitto libgpiod gstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly opencv"

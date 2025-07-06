@@ -12,6 +12,7 @@ IMAGE_INSTALL += " \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
     openssh \
     iw \
     wpa-supplicant \
@@ -22,5 +23,7 @@ IMAGE_INSTALL += " \
     rpicam-apps \
     i2c-tools \
 "
+# x264
+IMAGE_INSTALL += "x264 libcamera-gst"
 
 IMAGE_BOOT_FILES += "bootfiles/*"
